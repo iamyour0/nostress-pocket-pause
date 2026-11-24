@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>No Stress Pocket Pause</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(#eaf3ef,#f6f2e5);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#29434a}
+.wrap{max-width:1000px;margin:auto;padding:16px}header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:4px 0 14px}
+.brand{display:flex;align-items:center;gap:11px}.logo{width:45px;height:45px;border-radius:15px;background:#d2e7df;display:grid;place-items:center;font-size:25px}
+h1{font-size:clamp(22px,4vw,30px);margin:0}.sub{font-size:13px;color:#6b8588;margin-top:3px}.pill{font-size:12px;color:#607b80;border:1px solid #d6e5df;background:#ffffffb9;padding:8px 12px;border-radius:99px}
+.stage{border:1px solid #d1e1dc;border-radius:20px;overflow:hidden;background:#dbeae3;box-shadow:0 12px 32px #426b6217;position:relative}
+canvas{display:block;width:100%;height:auto;aspect-ratio:16/10;touch-action:none;cursor:crosshair}
+.hud{position:absolute;left:12px;top:12px;display:flex;gap:7px;flex-wrap:wrap;pointer-events:none}.hud span{background:#ffffffdc;border:1px solid #fff;border-radius:99px;padding:6px 10px;font-size:12px;color:#536f75}
+.toast{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:#ffffffdf;border:1px solid white;border-radius:99px;padding:8px 13px;font-size:12px;white-space:nowrap;pointer-events:none}
+.tools{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:11px 0}
+button{font:inherit;border:1px solid #d2e1dc;background:#ffffffc9;color:#3e5c62;border-radius:13px;padding:11px 8px;cursor:pointer;box-shadow:0 2px 0 #dce8e2;transition:transform .12s,background .12s}
+button:hover{background:#fff;transform:translateY(-1px)}button:active{transform:translateY(1px);box-shadow:none}button.active{background:#dcefe5;border-color:#a7cdbb;color:#2c6a58}
+.bt{display:block;font-size:14px;font-weight:700}.note{display:block;font-size:11px;color:#789094;margin-top:3px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}.actions button{flex:1;min-width:110px;padding:10px}
+.info{display:grid;grid-template-columns:1.2fr 1fr;gap:11px}.card{background:#ffffffc9;border:1px solid #d6e5df;border-radius:15px;padding:13px}.card h2{font-size:14px;margin:0 0 6px}.card p{font-size:12px;line-height:1.65;color:#6b8588;margin:0}
+@media(max-width:600px){.wrap{padding:9px}.pill{display:none}.tools{gap:6px}.bt{font-size:12px}.note{font-size:10px}.hud{left:7px;top:7px}.hud span{font-size:10px;padding:5px 8px}.toast{font-size:10px;bottom:7px}}
+</style></head>
+<body><main class="wrap">
+<header><div class="brand"><div class="logo">🍃</div><div><h1>No Stress Pocket Pause</h1><div class="sub">A quiet little pond for a short rest.</div></div></div><div class="pill">No score · No timer · No pressure</div></header>
+<section class="stage"><canvas id="scene" width="960" height="600" aria-label="Interactive quiet pond"></canvas>
+<div class="hud"><span id="weather">🍃 Still water</span><span id="visitors">🐟 Pond life</span><span id="day">🌤 Day</span></div><div class="toast" id="toast">Place a leaf, let it drift, or gently free one caught at the edge.</div></section>
+<div class="tools">
+<button id="water" class="active"><span class="bt">💧 Water drop</span><span class="note">Ripple & free a leaf</span></button>
+<button id="leaf"><span class="bt">🍃 Floating leaf</span><span class="note">Place on water</span></button>
+<button id="stone"><span class="bt">🪨 Pebble</span><span class="note">A stronger wave</span></button>
+</div>
+<div class="actions"><button id="breeze">🌬 Send a breeze</button><button id="rain">🌧 Soft rain</button><button id="night">🌙 Day / night</button><button id="clear">↺ Quiet the pond</button></div>
+<div class="info"><div class="card"><h2>A small moment, just for you</h2><p>Let a leaf drift around the pond. Sometimes it finds a quiet nook along the shore and gets caught. A little water ripple can help it find its way again.</p></div><div class="card"><h2>Little pond visitors</h2><p>Tap the water three times to invite a little fish. Eight pebbles may attract a bigger fish. The little fish wanders freely, while the bigger fish follows it and must go around pebbles. Leaves never block either fish. Four pebbles invite a frog. 🍃</p></div></div>
+</main>
+<script>
+(()=>{
+const c=document.getElementById('scene');let ctx=c.getContext('2d'),bgCache=null,bgNight=null;const W=960,H=600;
+let night=false,rain=0,wind=0,tool='water',ripples=[],leaves=[],stones=[],frog=null,fish=null,bigFish=null,fishTouches=0,toastTimer=0,time=0,lastRainRipple=0;
+const $=id=>document.getElementById(id),rand=(a,b)=>a+Math.random()*(b-a);
+function say(s){$('toast').textContent=s;$('toast').style.opacity=1;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').style.opacity=.68,2600)}
+// One gently irregular pond silhouette. All water placement, leaf movement and shoreline details use this same shape.
+const pondPath=new Path2D();
+// Broad, gently angular pond with shallow bays and shoreline indentations.
+pondPath.moveTo(24,300);
+pondPath.bezierCurveTo(32,230,76,190,145,180);
+pondPath.bezierCurveTo(205,143,270,156,315,174);
+pondPath.bezierCurveTo(375,132,451,150,500,178);
+pondPath.bezierCurveTo(565,145,635,160,684,190);
+pondPath.bezierCurveTo(758,176,846,207,900,265);
+pondPath.bezierCurveTo(944,315,925,370,878,398);
+pondPath.bezierCurveTo(840,426,808,416,782,445);
+pondPath.bezierCurveTo(735,490,666,480,620,458);
+pondPath.bezierCurveTo(558,490,490,472,438,451);
+pondPath.bezierCurveTo(382,476,320,455,285,425);
+pondPath.bezierCurveTo(225,438,163,411,145,382);
+pondPath.bezierCurveTo(88,388,38,354,24,300);pondPath.closePath();
+const islandPath=new Path2D();
+// A broad, irregular island reaches toward the right bank, leaving a slim winding channel.
+islandPath.moveTo(625,286);
+islandPath.bezierCurveTo(650,250,692,238,730,250);
+islandPath.bezierCurveTo(765,258,792,246,825,263);
+islandPath.bezierCurveTo(855,279,869,300,865,321);
+islandPath.bezierCurveTo(862,342,882,353,873,376);
+islandPath.bezierCurveTo(860,407,825,420,790,408);
+islandPath.bezierCurveTo(754,399,731,418,698,401);
+islandPath.bezierCurveTo(666,385,656,359,642,342);
+islandPath.bezierCurveTo(624,324,610,307,625,286);
+islandPath.closePath();
+function inside(x,y){return ctx.isPointInPath(pondPath,x,y)&&!ctx.isPointInPath(islandPath,x,y)}
+function nearestInside(x,y){if(inside(x,y))return{x,y};let best=null,bd=1e9;for(let a=0;a<Math.PI*2;a+=.04){for(let r=0;r<230;r+=4){let xx=x+Math.cos(a)*r,yy=y+Math.sin(a)*r;if(inside(xx,yy)&&r<bd){bd=r;best={x:xx,y:yy}}}if(best)break}return best||{x:480,y:320}}
+// Small fish can pass through pebbles; the big fish uses a grid route around them.
+const PATH_CELL=12,GRID_W=Math.ceil(W/PATH_CELL),GRID_H=Math.ceil(H/PATH_CELL);
+function bigWalkable(x,y){
+ if(!inside(x,y))return false;
+ for(const st of stones)if(Math.hypot(x-st.x,y-st.y)<st.size+18)return false;
+ return true;
+}
+function nearestWalkableCell(x,y){
+ let gx=Math.max(0,Math.min(GRID_W-1,Math.round(x/PATH_CELL))),gy=Math.max(0,Math.min(GRID_H-1,Math.round(y/PATH_CELL)));
+ if(bigWalkable(gx*PATH_CELL,gy*PATH_CELL))return{gx,gy};
+ for(let r=1;r<18;r++)for(let oy=-r;oy<=r;oy++)for(let ox=-r;ox<=r;ox++){
+  if(Math.abs(ox)!==r&&Math.abs(oy)!==r)continue;
+  let xx=gx+ox,yy=gy+oy;if(xx<0||yy<0||xx>=GRID_W||yy>=GRID_H)continue;
+  if(bigWalkable(xx*PATH_CELL,yy*PATH_CELL))return{gx:xx,gy:yy};
+ }
+ return null;
+}
+function findBigFishPath(fromX,fromY,toX,toY){
+ const a=nearestWalkableCell(fromX,fromY),b=nearestWalkableCell(toX,toY);if(!a||!b)return[];
+ const start=a.gy*GRID_W+a.gx,goal=b.gy*GRID_W+b.gx,total=GRID_W*GRID_H;
+ const prev=new Int32Array(total);prev.fill(-1);const seen=new Uint8Array(total),queue=new Int32Array(total);let head=0,tail=0;queue[tail++]=start;seen[start]=1;
+ const dirs=[[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
+ while(head<tail){let cur=queue[head++];if(cur===goal)break;let cx=cur%GRID_W,cy=Math.floor(cur/GRID_W);
+  for(const [dx,dy] of dirs){let nx=cx+dx,ny=cy+dy;if(nx<0||ny<0||nx>=GRID_W||ny>=GRID_H)continue;let ni=ny*GRID_W+nx;if(seen[ni])continue;
+   if(!bigWalkable(nx*PATH_CELL,ny*PATH_CELL))continue;
+   // Prevent diagonal corner-cutting around a rock or shoreline.
+   if(dx&&dy&&(!bigWalkable((cx+dx)*PATH_CELL,cy*PATH_CELL)||!bigWalkable(cx*PATH_CELL,(cy+dy)*PATH_CELL)))continue;
+   seen[ni]=1;prev[ni]=cur;queue[tail++]=ni;
+  }
+ }
+ if(!seen[goal])return[];let route=[],cur=goal;while(cur!==start&&cur>=0){route.push({x:(cur%GRID_W)*PATH_CELL,y:Math.floor(cur/GRID_W)*PATH_CELL});cur=prev[cur]}route.reverse();return route;
+}
+function keepFishInWater(f){
+ let nx=f.x+f.vx,ny=f.y+f.vy;
+ if(inside(nx,ny)){f.x=nx;f.y=ny;return}
+ // Slide along the bank/island edge instead of vanishing or getting stuck.
+ let sx=inside(nx,f.y)?nx:f.x,sy=inside(f.x,ny)?ny:f.y;
+ if(inside(sx,sy)){f.x=sx;f.y=sy;return}
+ let q=nearestInside(f.x,f.y);f.x=q.x;f.y=q.y;f.vx*= -.35;f.vy*= -.35;
+}
+function shoreNormal(x,y){let best={d:1e9,x:0,y:0};for(let a=0;a<Math.PI*2;a+=.045){let xx=x+Math.cos(a)*3,yy=y+Math.sin(a)*3;if(!inside(xx,yy)){let d=Math.hypot(xx-x,yy-y);if(d<best.d)best={d,x:Math.cos(a),y:Math.sin(a)}}}return best}
+function ripple(x,y,kind='drop'){
+ const force=kind==='stone'?.42:(kind==='leaf'?.025:kind==='rain'?.035:.12),max=kind==='stone'?145:(kind==='leaf'?18:kind==='rain'?24:52);
+ ripples.push({x,y,r:2,max,life:1,speed:kind==='stone'?1.05:(kind==='leaf'?.38:kind==='rain'?.42:.68),force,kind});
+ if(ripples.length>65)ripples.shift();
+ if(kind==='drop')fishTouches++;
+ if(!fish&&fishTouches>=3){let p=nearestInside(360,330);fish={x:p.x,y:p.y,vx:.35,vy:.12,age:0};say('Three gentle touches — a little fish comes to visit. 🐟');}
+ leaves.forEach(l=>{let dx=l.x-x,dy=l.y-y,d=Math.hypot(dx,dy)||1,reach=kind==='stone'?155:kind==='leaf'?30:68;if(d<reach){let push=force*(1-d/reach);let multiplier=kind==='stone'?.62:kind==='leaf'?.42:.58;l.vx+=dx/d*push*multiplier;l.vy+=dy/d*push*multiplier;if(l.caught&&d<(kind==='stone'?78:kind==='leaf'?14:38)){l.caught=false;l.caughtAt=0;l.vx+=dx/d*(kind==='stone'?.11:kind==='leaf'?.035:.055);l.vy+=dy/d*(kind==='stone'?.11:kind==='leaf'?.035:.055)}}});
+}
+function drawBg(t){
+ // No horizon or distant scenery: a close, richly textured grassy bank.
+ let g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,night?'#263d45':'#78966b');g.addColorStop(1,night?'#354e42':'#a8bb7d');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ // Subtle ground texture made from deterministic brush strokes.
+ for(let i=0;i<260;i++){let x=(i*83+19)%W,y=(i*137+41)%H;if(inside(x,y))continue;let d=shoreNormal(x,y).d;if(d<18||d>115)continue;ctx.strokeStyle=night?'#9eb49b26':'#e5edc05c';ctx.lineWidth=1+(i%3)*.35;ctx.beginPath();ctx.moveTo(x,y);ctx.quadraticCurveTo(x+5+(i%7),y-3,x+11+(i%5),y+1);ctx.stroke()}
+ // Soft bank shadow and earthy shoreline lip.
+ ctx.save();ctx.shadowColor='#203c2d77';ctx.shadowBlur=20;ctx.fillStyle=night?'#4b6554':'#718e5d';ctx.fill(pondPath);ctx.restore();
+ ctx.strokeStyle=night?'#a1a58a':'#c4b99a';ctx.lineWidth=13;ctx.stroke(pondPath);ctx.strokeStyle=night?'#596f5e':'#819d6a';ctx.lineWidth=7;ctx.stroke(pondPath);
+ // Jagged, layered grey rocks (irregular polygons, not green circles).
+ for(let i=0;i<62;i++){let x=(i*97+23)%W,y=(i*151+17)%H;if(inside(x,y))continue;let d=shoreNormal(x,y).d;if(d>24)continue;let size=7+(i%6)*2.3,ang=(i%11)*.37;let pts=[];for(let k=0;k<7;k++){let a=ang+k*Math.PI*2/7,rr=size*(.68+((i*3+k*5)%7)/16);pts.push([x+Math.cos(a)*rr,y+Math.sin(a)*rr*.72])}ctx.beginPath();ctx.moveTo(...pts[0]);pts.slice(1).forEach(pt=>ctx.lineTo(...pt));ctx.closePath();ctx.fillStyle=night?['#53645f','#66736d','#465651'][i%3]:['#777e79','#8d938d','#686f6b'][i%3];ctx.fill();ctx.strokeStyle=night?'#34463f':'#545b56';ctx.lineWidth=1.5;ctx.stroke();ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);ctx.lineTo(pts[2][0],pts[2][1]);ctx.lineTo(pts[3][0],pts[3][1]);ctx.strokeStyle=night?'#b0b8a34a':'#d8ddd277';ctx.lineWidth=2;ctx.stroke();
+ }
+ // Tufts of grass and a few tiny flowers, clustered along the bank.
+ for(let i=0;i<190;i++){let x=(i*61+11)%W,y=(i*109+7)%H;if(inside(x,y))continue;let d=shoreNormal(x,y).d;if(d>45)continue;ctx.strokeStyle=night?'#a5bd8b':'#426e42';ctx.lineWidth=1.8;for(let k=0;k<3;k++){ctx.beginPath();ctx.moveTo(x+k*2,y);ctx.quadraticCurveTo(x-4+k*4,y-8-(i%5),x-2+k*4,y-12-(i%4));ctx.stroke()}if(i%19===0){ctx.fillStyle=night?'#d7c8b4':'#f4e6ca';ctx.beginPath();ctx.arc(x,y-12,2.5,0,Math.PI*2);ctx.fill()}}
+ // Island: earthy shore, low grass and a few visible stones.
+ ctx.save();ctx.fillStyle=night?'#51685a':'#8ca56d';ctx.fill(islandPath);ctx.strokeStyle=night?'#9eaa8b':'#c3b796';ctx.lineWidth=7;ctx.stroke(islandPath);ctx.strokeStyle=night?'#394e43':'#6f8757';ctx.lineWidth=3;ctx.stroke(islandPath);
+ for(let i=0;i<18;i++){let x=700+(i*19)%85,y=280+(i*23)%82;if(!ctx.isPointInPath(islandPath,x,y))continue;if(i%4===0){ctx.fillStyle=night?'#65726b':'#7c827b';ctx.beginPath();ctx.moveTo(x-7,y+3);ctx.lineTo(x-3,y-5);ctx.lineTo(x+6,y-4);ctx.lineTo(x+9,y+3);ctx.lineTo(x+2,y+7);ctx.closePath();ctx.fill()}else{ctx.strokeStyle=night?'#9bb18a':'#4d7849';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x,y+4);ctx.lineTo(x-3,y-7);ctx.moveTo(x+2,y+4);ctx.lineTo(x+6,y-5);ctx.stroke()}}
+ ctx.restore();
+ // Sun or moon, kept close and understated.
+ ctx.fillStyle=night?'#e8e4c4':'#fff0b9';ctx.beginPath();ctx.arc(820,62,night?19:23,0,Math.PI*2);ctx.fill();
+ if(night)for(let i=0;i<28;i++){let x=(i*173+43)%W,y=(i*71+22)%150;ctx.fillStyle='#ffffff99';ctx.fillRect(x,y,2,2)}
+}
+function drawWater(t){
+ ctx.save();ctx.clip(pondPath);
+ let g=ctx.createLinearGradient(180,160,730,470);g.addColorStop(0,night?'#4b7c91':'#a9d7d0');g.addColorStop(.55,night?'#397087':'#7fbdb4');g.addColorStop(1,night?'#2a586e':'#65aaa2');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ // quiet glints, deterministic so the shoreline never shimmers/flickers
+ for(let i=0;i<42;i++){let x=150+(i*127)%650,y=205+(i*83)%250;if(!inside(x,y))continue;let w=8+(i%7)*3;ctx.strokeStyle=night?'#d9f0ff20':'#f6fff04a';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+w,y+Math.sin(i)*1.2);ctx.stroke()}
+ // subtle still-water drift lines
+ for(let i=0;i<14;i++){let x=180+(i*91+t*.006)%600,y=245+(i*53)%180;if(!inside(x,y))continue;ctx.strokeStyle=night?'#e4f6ff1c':'#f5fff02b';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(x,y,12+(i%4)*4,3,0,0,Math.PI*2);ctx.stroke()}
+ // rain speckles on the water
+ if(rain>0)for(let i=0;i<35;i++){let x=(i*97+t*.1)%W,y=(i*59+t*.22)%H;if(inside(x,y)){ctx.strokeStyle=night?'#d4e8ff45':'#ffffff70';ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x-2,y+7);ctx.stroke()}}
+ // ripples
+ ripples.forEach(r=>{ctx.strokeStyle=(night?'rgba(220,244,255,':'rgba(245,255,238,')+Math.max(0,r.life*(r.kind==='stone'?.38:.26))+')';ctx.lineWidth=r.kind==='stone'?2:1.4;ctx.beginPath();ctx.ellipse(r.x,r.y,r.r*1.42,r.r*.72,0,0,Math.PI*2);ctx.stroke()});
+ // leaves and stones clipped strictly to pond water
+ leaves.forEach(l=>drawLeaf(l,t));stones.forEach(drawStone);drawFish(t,fish,false);drawFish(t,bigFish,true);drawFrog(t);drawIslandOnWater(t);
+ ctx.restore();
+}
+function drawIslandOnWater(t){
+ // Repaint the island above the water layer so it remains a real dry patch.
+ ctx.fillStyle=night?'#526a58':'#8ca56d';ctx.fill(islandPath);ctx.strokeStyle=night?'#b1b398':'#c9bda0';ctx.lineWidth=8;ctx.stroke(islandPath);ctx.strokeStyle=night?'#3c5546':'#6f8757';ctx.lineWidth=3;ctx.stroke(islandPath);
+ for(let i=0;i<16;i++){let x=700+(i*19)%85,y=280+(i*23)%82;if(!ctx.isPointInPath(islandPath,x,y))continue;if(i%4===0){ctx.fillStyle=night?'#65726b':'#7c827b';ctx.beginPath();ctx.moveTo(x-7,y+3);ctx.lineTo(x-3,y-5);ctx.lineTo(x+6,y-4);ctx.lineTo(x+9,y+3);ctx.lineTo(x+2,y+7);ctx.closePath();ctx.fill()}else{ctx.strokeStyle=night?'#9bb18a':'#4d7849';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x,y+4);ctx.lineTo(x-3,y-7);ctx.moveTo(x+2,y+4);ctx.lineTo(x+6,y-5);ctx.stroke()}}
+}
+function drawLeaf(l,t){ctx.save();ctx.translate(l.x,l.y);ctx.rotate(l.angle+Math.sin(t*.001+l.phase)*.13);ctx.fillStyle=l.color;ctx.beginPath();ctx.ellipse(0,0,l.size,l.size*.55,0,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#ffffff75';ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(-l.size*.65,0);ctx.lineTo(l.size*.7,0);ctx.stroke();ctx.restore()}
+function drawStone(s){ctx.fillStyle='#526b6c';ctx.beginPath();ctx.ellipse(s.x,s.y,s.size,s.size*.65,-.18,0,Math.PI*2);ctx.fill();ctx.fillStyle='#a4b5b1';ctx.beginPath();ctx.ellipse(s.x-s.size*.24,s.y-s.size*.2,s.size*.45,s.size*.2,-.3,0,Math.PI*2);ctx.fill()}
+function drawFish(t,f=fish,big=false){if(!f)return;let x=f.x+Math.sin(t*.0007+(big?1:0))*3,y=f.y+Math.sin(t*.0012+(big?2:0))*2;ctx.save();ctx.translate(x,y);ctx.scale(f.vx<0?-1:1,1);ctx.fillStyle=big?(night?'#a9b6a5':'#718e85'):(night?'#d7d9b7':'#f0c78a');ctx.beginPath();ctx.ellipse(0,0,big?23:13,big?10:6.5,0,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.moveTo(big?-19:-10,0);ctx.lineTo(big?-32:-19,big?-10:-7);ctx.lineTo(big?-31:-18,big?10:7);ctx.closePath();ctx.fill();ctx.fillStyle='#3a4d45';ctx.beginPath();ctx.arc(big?13:7,-1.5,big?2:1.5,0,Math.PI*2);ctx.fill();ctx.restore();}
+function drawFrog(t){if(!frog)return;let x=frog.x+Math.sin(t*.001)*2.5,y=frog.y+Math.sin(t*.003)*1.5;ctx.fillStyle='#4c9978';ctx.beginPath();ctx.ellipse(x,y,17,12,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#bfe0a7';ctx.beginPath();ctx.ellipse(x,y+4,10,5,0,0,Math.PI*2);ctx.fill();for(let dx of [-7,7]){ctx.fillStyle='#5ba783';ctx.beginPath();ctx.arc(x+dx,y-8,5.5,0,Math.PI*2);ctx.fill();ctx.fillStyle='white';ctx.beginPath();ctx.arc(x+dx,y-9,2.7,0,Math.PI*2);ctx.fill();ctx.fillStyle='#253c35';ctx.beginPath();ctx.arc(x+dx,y-9,1.3,0,Math.PI*2);ctx.fill()}}
+function frame(t){time=t;if(!bgCache||bgNight!==night){bgCache=document.createElement('canvas');bgCache.width=W;bgCache.height=H;let mainCtx=ctx;ctx=bgCache.getContext('2d');drawBg(t);ctx=mainCtx;bgNight=night;}ctx.drawImage(bgCache,0,0);drawWater(t);
+ if(wind>0){for(let i=0;i<5;i++){let x=(t*.13+i*210)%960,y=175+i*68;ctx.strokeStyle='#ffffff50';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x,y);ctx.quadraticCurveTo(x+25,y-7,x+55,y);ctx.stroke()}}
+ ripples.forEach(r=>{r.r+=r.speed;r.life-=.0085;if(r.r>r.max)r.life=0});ripples=ripples.filter(r=>r.life>0);
+ leaves.forEach(l=>{
+  if(!l.caught){
+   // slow circular drift: leaves move gently, but the pond's irregular edge can catch them
+   l.vx+=.0018*Math.cos(t*.00025+l.phase)+wind*.012;
+   l.vy+=.0014*Math.sin(t*.00022+l.phase)+wind*.002*Math.sin(t*.0004+l.phase);
+   l.x+=l.vx;l.y+=l.vy;
+   l.vx*=.975;l.vy*=.975;
+   if(!inside(l.x,l.y)){let q=nearestInside(l.x,l.y);l.x=q.x;l.y=q.y;l.vx*= -.28;l.vy*= -.28;l.edgeTouch=(l.edgeTouch||0)+1}
+   // natural little shoreline pockets snag leaves; a nearby ripple can free them
+   if(!l.caught&&l.edgeTouch>=3){l.caught=true;l.vx=0;l.vy=0;l.caughtAt=performance.now();l.edgeTouch=0;l.snagX=l.x;l.snagY=l.y;say('A leaf has tucked into a narrow nook. A tiny ripple can ease it free. 💚')}
+  }
+  l.angle+=l.vx*.012;
+ });
+ // Little fish calmly roam the whole pond, including narrow channels.
+ // It does not flee from the big fish and pebbles never block its movement.
+ if(fish){
+  if(!fish.roamX||t>fish.nextRoam){let q=nearestInside(rand(45,915),rand(165,465));fish.roamX=q.x;fish.roamY=q.y;fish.nextRoam=t+rand(2200,4300)}
+  let dx=fish.roamX-fish.x,dy=fish.roamY-fish.y,d=Math.hypot(dx,dy)||1;
+  let speed=.52;fish.vx=fish.vx*.94+dx/d*speed*.06;fish.vy=fish.vy*.94+dy/d*speed*.06;
+  let v=Math.hypot(fish.vx,fish.vy);if(v>speed){fish.vx=fish.vx/v*speed;fish.vy=fish.vy/v*speed}
+  keepFishInWater(fish);
+  if(Math.hypot(fish.roamX-fish.x,fish.roamY-fish.y)<20)fish.nextRoam=t;
+ }
+ // The larger fish persistently tracks the little fish. A short-grid route makes
+ // pebbles solid to it while leaves remain completely passable.
+ if(bigFish&&fish){
+  if(!bigFish.path||t>bigFish.repathAt||Math.hypot(fish.x-bigFish.pathTargetX,fish.y-bigFish.pathTargetY)>42){
+   bigFish.path=findBigFishPath(bigFish.x,bigFish.y,fish.x,fish.y);
+   bigFish.pathIndex=0;bigFish.pathTargetX=fish.x;bigFish.pathTargetY=fish.y;bigFish.repathAt=t+430;
+  }
+  let waypoint=bigFish.path&&bigFish.path[bigFish.pathIndex];
+  while(waypoint&&Math.hypot(waypoint.x-bigFish.x,waypoint.y-bigFish.y)<13){bigFish.pathIndex++;waypoint=bigFish.path[bigFish.pathIndex]}
+  let tx=waypoint?waypoint.x:fish.x,ty=waypoint?waypoint.y:fish.y,dx=tx-bigFish.x,dy=ty-bigFish.y,d=Math.hypot(dx,dy)||1;
+  const speed=1.18;bigFish.vx=bigFish.vx*.78+dx/d*speed*.22;bigFish.vy=bigFish.vy*.78+dy/d*speed*.22;
+  let v=Math.hypot(bigFish.vx,bigFish.vy);if(v>speed){bigFish.vx=bigFish.vx/v*speed;bigFish.vy=bigFish.vy/v*speed}
+  let nx=bigFish.x+bigFish.vx,ny=bigFish.y+bigFish.vy;
+  if(bigWalkable(nx,ny)){bigFish.x=nx;bigFish.y=ny}
+  else {bigFish.path=[];bigFish.repathAt=0;bigFish.vx*=.25;bigFish.vy*=.25}
+ }
+ // Pebble count gradually invites a larger fish into the pond.
+ if(!bigFish&&stones.length>=8&&fish){let q=nearestInside(520,350);bigFish={x:q.x,y:q.y,vx:-.12,vy:.08,path:[],pathIndex:0,repathAt:0};say('Eight pebbles — a bigger fish has arrived, following the little one. 🐟')}
+ if(rain>0){if(t-lastRainRipple>230){lastRainRipple=t;let x=rand(80,900),y=rand(170,470);if(inside(x,y))ripple(x,y,'rain')}}
+ $('weather').textContent=rain>.05?'🌧 Gentle rain':wind>.05?'🌬 Breezy water':'🍃 Still water';
+ $('visitors').textContent=bigFish?'🐟 Little fish · Big fish':fish?'🐟 Little fish':stones.length>=8?'🪨 Waiting for fish':'🐟 Pond life';
+ rain=Math.max(0,rain-.00035);wind=Math.max(0,wind-.00025);
+ 
+ requestAnimationFrame(frame)
+}
+function point(e){let r=c.getBoundingClientRect();return{x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height}}
+c.addEventListener('pointerdown',e=>{
+ let q=point(e);
+ if(!inside(q.x,q.y)){say(tool==='leaf'?'Place leaves only on the pond water.':'Touch the water inside the pond.');return}
+ if(tool==='water'){ripple(q.x,q.y,'drop');say('A soft wave travels across the pond. 💧')}
+ else if(tool==='leaf'){if(leaves.length>=24)leaves.shift();leaves.push({x:q.x,y:q.y,size:rand(11,17),angle:rand(-1,1),phase:rand(0,6),vx:rand(-.12,.12),vy:rand(-.1,.1),edgeTouch:0,caught:false,color:['#6caa78','#9ac57e','#c1cf83','#5b9d82'][Math.floor(rand(0,4))]});ripple(q.x,q.y,'leaf');say('A leaf begins its quiet journey. 🍃')}
+ else{if(stones.length>=16)stones.shift();stones.push({x:q.x,y:q.y,size:rand(11,18)});ripple(q.x,q.y,'stone');if(!frog&&stones.length>=4){frog={x:q.x,y:q.y};say('Four pebbles — a little frog has come to rest. 🐸')}else say('A pebble sends a soft, wider wave. 🪨')}
+});
+function select(t){tool=t;['water','leaf','stone'].forEach(id=>$(id).classList.toggle('active',id===t))}
+$('water').onclick=()=>select('water');$('leaf').onclick=()=>select('leaf');$('stone').onclick=()=>select('stone');
+$('breeze').onclick=()=>{wind=1;say('A breeze nudges leaves along the water and combs soft ripples across the pond. 🌬')};
+$('rain').onclick=()=>{rain=1;say('Soft rain wakes the pond with tiny ripples and brings the fish closer to the surface. 🌧')};
+$('night').onclick=()=>{night=!night;$('day').textContent=night?'🌙 Night':'🌤 Day';say(night?'The pond rests under the moon.':'A quiet morning returns.')};
+$('clear').onclick=()=>{leaves=[];stones=[];ripples=[];frog=null;fish=null;bigFish=null;fishTouches=0;say('The pond is quiet again.');};
+requestAnimationFrame(frame);
+})();
+</script></body></html>
